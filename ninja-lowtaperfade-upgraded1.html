@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ninja Lowtaper Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Arial', sans-serif; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  /* Shop overlay */
+  #shopOverlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+  }
+  #shopOverlay.active { display: flex; }
+  #shopBox {
+    background: #1a1a2e;
+    border: 2px solid #4a4a8a;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 700px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+    color: #fff;
+  }
+  #shopBox h2 {
+    text-align: center;
+    font-size: 28px;
+    margin-bottom: 8px;
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255,215,0,0.5);
+  }
+  #shopScissorsCount {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 20px;
+    color: #aaa;
+  }
+  .shopGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .shopItem {
+    background: #0d0d1a;
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    pointer-events: all;
+  }
+  .shopItem:hover { transform: scale(1.04); }
+  .shopItem.owned { opacity: 0.7; cursor: default; }
+  .shopItem.owned:hover { transform: none; }
+  .shopItem .itemIcon { font-size: 36px; margin-bottom: 6px; }
+  .shopItem .itemName { font-size: 15px; font-weight: bold; margin-bottom: 4px; }
+  .shopItem .itemDesc { font-size: 11px; color: #aaa; margin-bottom: 8px; line-height: 1.3; }
+  .shopItem .itemPrice { font-size: 13px; color: #ffd700; margin-bottom: 6px; }
+  .shopItem .itemRarity { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; display: inline-block; }
+  .rarity-common { background: #555; color: #ddd; border: 1px solid #777; }
+  .rarity-uncommon { background: #1a4a1a; color: #4caf50; border: 1px solid #4caf50; }
+  .rarity-rare { background: #0d2a4a; color: #2196f3; border: 1px solid #2196f3; }
+  .rarity-epic { background: #2a0a4a; color: #9c27b0; border: 1px solid #9c27b0; }
+  .rarity-legendary { background: #3a2a00; color: #ffd700; border: 1px solid #ffd700; }
+  .shopCloseBtn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    pointer-events: all;
+    transition: background 0.2s;
+  }
+  .shopCloseBtn:hover { background: #555; }
+  .ownedBadge {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 11px;
+    background: #2a5a2a;
+    color: #5f5;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<!-- Shop Overlay -->
+<div id="shopOverlay">
+  <div id="shopBox">
+    <h2>⚔️ NINJA SHOP ⚔️</h2>
+    <div id="shopScissorsCount">✂️ 0 scissors</div>
+    <div class="shopGrid" id="shopGrid"></div>
+    <button class="shopCloseBtn" id="shopCloseBtn">Close Shop</button>
+  </div>
+</div>
+
+<script>
+// ─── Canvas Setup ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = Math.min(window.innerWidth, 900);
+  canvas.height = Math.min(window.innerHeight, 550);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ─── Audio (Web Audio API) ────────────────────────────────────────────────────
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, type, duration, startVol, endVol, delay) {
+  try {
+    const ac = getAudioCtx();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ac.currentTime + delay);
+    gain.gain.setValueAtTime(startVol, ac.currentTime + delay);
+    gain.gain.linearRampToValueAtTime(endVol, ac.currentTime + delay + duration);
+    osc.start(ac.currentTime + delay);
+    osc.stop(ac.currentTime + delay + duration + 0.01);
+  } catch(e) {}
+}
+
+// Ben kill sounds
+function playBenSound() {
+  const choice = Math.floor(Math.random() * 4);
+  switch(choice) {
+    case 0: // "Hmm" – low descending tone
+      playTone(300, 'sine', 0.3, 0.4, 0.0, 0);
+      playTone(220, 'sine', 0.25, 0.3, 0.0, 0.15);
+      break;
+    case 1: // "No." – short sharp buzz
+      playTone(180, 'square', 0.12, 0.5, 0.0, 0);
+      playTone(140, 'square', 0.08, 0.3, 0.0, 0.13);
+      break;
+    case 2: // "Hello?" – rising tone
+      playTone(250, 'sine', 0.15, 0.3, 0.3, 0);
+      playTone(320, 'sine', 0.15, 0.3, 0.3, 0.16);
+      playTone(400, 'sine', 0.2, 0.35, 0.0, 0.32);
+      break;
+    case 3: // "Yes." – quick ascending beep
+      playTone(350, 'sine', 0.1, 0.4, 0.4, 0);
+      playTone(480, 'sine', 0.1, 0.4, 0.0, 0.11);
+      break;
+  }
+}
+
+function playJumpSound() {
+  playTone(440, 'sine', 0.1, 0.3, 0.0, 0);
+  playTone(600, 'sine', 0.1, 0.2, 0.0, 0.08);
+}
+
+function playCollectSound() {
+  playTone(880, 'sine', 0.08, 0.3, 0.0, 0);
+  playTone(1100, 'sine', 0.08, 0.3, 0.0, 0.09);
+}
+
+function playHitSound() {
+  playTone(200, 'sawtooth', 0.2, 0.5, 0.0, 0);
+}
+
+function playGameOverSound() {
+  playTone(400, 'sawtooth', 0.15, 0.4, 0.0, 0);
+  playTone(300, 'sawtooth', 0.15, 0.4, 0.0, 0.2);
+  playTone(200, 'sawtooth', 0.25, 0.4, 0.0, 0.4);
+}
+
+function playPowerupSound() {
+  playTone(600, 'sine', 0.1, 0.3, 0.0, 0);
+  playTone(800, 'sine', 0.1, 0.3, 0.0, 0.12);
+  playTone(1000, 'sine', 0.15, 0.3, 0.0, 0.24);
+}
+
+// ─── LocalStorage Helpers ─────────────────────────────────────────────────────
+function loadScissors() {
+  return parseInt(localStorage.getItem('ninjaScissors') || '0', 10);
+}
+function saveScissors(val) {
+  localStorage.setItem('ninjaScissors', String(val));
+}
+function loadOwnedPowerups() {
+  try {
+    return JSON.parse(localStorage.getItem('ninjaOwnedPowerups') || '[]');
+  } catch(e) { return []; }
+}
+function saveOwnedPowerups(arr) {
+  localStorage.setItem('ninjaOwnedPowerups', JSON.stringify(arr));
+}
+
+// ─── Powerup Definitions ──────────────────────────────────────────────────────
+const POWERUP_DEFS = [
+  { id: 'speed',      name: 'Speed Boost',   icon: '⚡', desc: 'Run 25% faster for 10 seconds',         price: 300,  rarity: 'common',    duration: 600 },
+  { id: 'doublejump', name: 'Double Jump+',  icon: '🦅', desc: 'Allows 3 jumps instead of 2',           price: 600,  rarity: 'common',    duration: 0   },
+  { id: 'shield',     name: 'Shield',        icon: '🛡️', desc: 'Block one hit from the wall',           price: 1000, rarity: 'uncommon',  duration: 0   },
+  { id: 'magnet',     name: 'Magnet',        icon: '🧲', desc: 'Attract nearby scissors automatically', price: 1800, rarity: 'rare',      duration: 0   },
+  { id: 'slowmo',     name: 'Slow-Mo',       icon: '⏳', desc: 'Slow down the wall for 8 seconds',       price: 3000, rarity: 'epic',      duration: 480 },
+  { id: 'invincible', name: 'Invincibility', icon: '⭐', desc: 'Temporary invincibility for 5 seconds', price: 5000, rarity: 'legendary', duration: 300 },
+];
+
+// ─── Game State ───────────────────────────────────────────────────────────────
+let totalScissors = loadScissors();
+let ownedPowerups = loadOwnedPowerups();
+
+const STATES = { MENU: 'menu', PLAYING: 'playing', GAMEOVER: 'gameover', PAUSED: 'paused' };
+let gameState = STATES.MENU;
+
+// ─── Player ───────────────────────────────────────────────────────────────────
+const GROUND_OFFSET = 90; // pixels from bottom
+const PLAYER_W = 48;
+const PLAYER_H = 64;
+const MAX_JUMPS_BASE = 2;
+
+let player = {};
+let keys = {};
+
+function resetPlayer() {
+  player = {
+    x: 120,
+    y: 0,
+    vy: 0,
+    vx: 0,
+    onGround: false,
+    jumpsLeft: MAX_JUMPS_BASE,
+    crouching: false,
+    sliding: false,
+    slideTimer: 0,
+    invincible: false,
+    invincibleTimer: 0,
+    shieldActive: false,
+    lives: 3,
+    score: 0,
+    runScissors: 0, // scissors collected this run
+    speedBoostTimer: 0,
+    slowMoTimer: 0,
+    barrelSlowTimer: 0, // brief slowdown after barrel hit
+    magnetActive: false,
+    activePowerupLabel: '',
+    activePowerupTimer: 0,
+    runPowerups: {}, // which powerups are available this run (reset each run)
+  };
+
+  // Set ground Y
+  player.y = groundY() - PLAYER_H;
+
+  // Load powerups for this run
+  for (const def of POWERUP_DEFS) {
+    if (ownedPowerups.includes(def.id)) {
+      player.runPowerups[def.id] = true;
+    }
+  }
+}
+
+function groundY() {
+  return canvas.height - GROUND_OFFSET;
+}
+
+// ─── Physics Constants ────────────────────────────────────────────────────────
+const GRAVITY = 0.6;
+const JUMP_VEL = -13;
+const PLAYER_SPEED = 5;
+const SLIDE_DURATION = 30;
+
+// ─── Scrolling World ──────────────────────────────────────────────────────────
+let wallSpeed = 3.5; // base wall speed (slow)
+let worldX = 0;     // tracks horizontal scroll offset
+
+// ─── Walls ────────────────────────────────────────────────────────────────────
+let walls = [];
+let wallSpawnTimer = 0;
+let wallSpawnInterval = 140;
+
+function spawnWall() {
+  const h = 80 + Math.random() * 100;
+  walls.push({
+    x: canvas.width + 40,
+    w: 30,
+    h: h,
+    y: groundY() - h,
+    type: 'wall',
+  });
+}
+
+// ─── Barrels ──────────────────────────────────────────────────────────────────
+let barrels = [];
+let barrelSpawnTimer = 0;
+let barrelSpawnInterval = 220;
+
+function spawnBarrel() {
+  barrels.push({
+    x: canvas.width + 40,
+    y: groundY() - 44,
+    w: 44,
+    h: 44,
+    slowTimer: 0,
+  });
+}
+
+// ─── Scissors Collectibles ────────────────────────────────────────────────────
+let scissorItems = [];
+let scissorSpawnTimer = 0;
+let scissorSpawnInterval = 90;
+
+function spawnScissors() {
+  const heights = [0, 40, 90, 130]; // offset above ground
+  const off = heights[Math.floor(Math.random() * heights.length)];
+  scissorItems.push({
+    x: canvas.width + 40,
+    y: groundY() - 28 - off,
+    w: 28,
+    h: 28,
+    collected: false,
+    bobOffset: Math.random() * Math.PI * 2,
+  });
+}
+
+// ─── Ben Enemy ────────────────────────────────────────────────────────────────
+let bens = [];
+let benSpawnTimer = 0;
+let benSpawnInterval = 350;
+
+function spawnBen() {
+  bens.push({
+    x: canvas.width + 40,
+    y: groundY() - 72,
+    w: 52,
+    h: 72,
+    hp: 1,
+    dead: false,
+    deadTimer: 0,
+  });
+}
+
+// ─── Score / Speed ────────────────────────────────────────────────────────────
+let frameCount = 0;
+let difficultyTimer = 0;
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+
+  // Jump
+  if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && gameState === STATES.PLAYING) {
+    e.preventDefault();
+    doJump();
+  }
+  // Slide/crouch
+  if ((e.code === 'ArrowDown' || e.code === 'KeyS') && gameState === STATES.PLAYING) {
+    if (player.onGround) {
+      player.sliding = true;
+      player.slideTimer = SLIDE_DURATION;
+    }
+  }
+  // Start from menu
+  if (e.code === 'Enter' || e.code === 'Space') {
+    if (gameState === STATES.MENU) startGame();
+    else if (gameState === STATES.GAMEOVER) startGame();
+  }
+  // Powerup activation keys (1-6)
+  if (gameState === STATES.PLAYING) {
+    const numMap = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5 };
+    if (e.code in numMap) {
+      const def = POWERUP_DEFS[numMap[e.code]];
+      activatePowerup(def.id);
+    }
+  }
+});
+
+window.addEventListener('keyup', e => {
+  keys[e.code] = false;
+  if ((e.code === 'ArrowDown' || e.code === 'KeyS') && gameState === STATES.PLAYING) {
+    player.sliding = false;
+  }
+});
+
+// Touch / click for jump
+// Click-to-jump handled in combined click listener below
+
+function doJump() {
+  const maxJ = player.runPowerups['doublejump'] ? 3 : MAX_JUMPS_BASE;
+  if (player.jumpsLeft > 0) {
+    playJumpSound();
+    player.vy = JUMP_VEL;
+    player.jumpsLeft--;
+    player.onGround = false;
+  }
+}
+
+// ─── Powerup Activation ───────────────────────────────────────────────────────
+function activatePowerup(id) {
+  if (!player.runPowerups[id]) return;
+  const def = POWERUP_DEFS.find(d => d.id === id);
+  if (!def) return;
+  playPowerupSound();
+  switch(id) {
+    case 'speed':
+      player.speedBoostTimer = def.duration;
+      player.activePowerupLabel = '⚡ Speed';
+      player.activePowerupTimer = def.duration;
+      delete player.runPowerups[id]; // single use per run
+      break;
+    case 'shield':
+      player.shieldActive = true;
+      player.activePowerupLabel = '🛡️ Shield';
+      player.activePowerupTimer = 300;
+      delete player.runPowerups[id];
+      break;
+    case 'slowmo':
+      player.slowMoTimer = def.duration;
+      player.activePowerupLabel = '⏳ Slow-Mo';
+      player.activePowerupTimer = def.duration;
+      delete player.runPowerups[id];
+      break;
+    case 'invincible':
+      player.invincible = true;
+      player.invincibleTimer = def.duration;
+      player.activePowerupLabel = '⭐ Invincible';
+      player.activePowerupTimer = def.duration;
+      delete player.runPowerups[id];
+      break;
+    case 'magnet':
+      player.magnetActive = true;
+      player.activePowerupLabel = '🧲 Magnet';
+      player.activePowerupTimer = 360;
+      delete player.runPowerups[id];
+      break;
+    case 'doublejump':
+      // Passive – no activation needed, but consume to show label
+      player.activePowerupLabel = '🦅 3-Jump';
+      player.activePowerupTimer = 120;
+      break;
+  }
+}
+
+// ─── Game Start ───────────────────────────────────────────────────────────────
+function startGame() {
+  ownedPowerups = loadOwnedPowerups();
+  resetPlayer();
+  walls = [];
+  barrels = [];
+  scissorItems = [];
+  bens = [];
+  wallSpawnTimer = 0;
+  barrelSpawnTimer = 0;
+  scissorSpawnTimer = 0;
+  benSpawnTimer = 0;
+  frameCount = 0;
+  difficultyTimer = 0;
+  wallSpeed = 3.5;
+  worldX = 0;
+  gameState = STATES.PLAYING;
+}
+
+// ─── Collision Helpers ────────────────────────────────────────────────────────
+function rectOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function playerRect() {
+  if (player.sliding) {
+    return { x: player.x, y: player.y + PLAYER_H / 2, w: PLAYER_W, h: PLAYER_H / 2 };
+  }
+  return { x: player.x, y: player.y, w: PLAYER_W, h: PLAYER_H };
+}
+
+// ─── Update ───────────────────────────────────────────────────────────────────
+function update() {
+  if (gameState !== STATES.PLAYING) return;
+
+  frameCount++;
+  player.score = Math.floor(frameCount / 6);
+
+  // Difficulty ramp
+  difficultyTimer++;
+  if (difficultyTimer % 600 === 0) {
+    wallSpeed = Math.min(wallSpeed + 0.3, 7);
+    wallSpawnInterval = Math.max(wallSpawnInterval - 8, 80);
+  }
+
+  // Effective speed (slow-mo powerup)
+  let effectiveWallSpeed = wallSpeed;
+  if (player.slowMoTimer > 0) {
+    effectiveWallSpeed = wallSpeed * 0.4;
+    player.slowMoTimer--;
+  }
+
+  // Horizontal player movement (only on key press)
+  player.vx = 0;
+  const speedMult = player.speedBoostTimer > 0 ? 1.25 : 1;
+  if (keys['ArrowLeft'] || keys['KeyA']) {
+    player.vx = -PLAYER_SPEED * speedMult;
+  }
+  if (keys['ArrowRight'] || keys['KeyD']) {
+    player.vx = PLAYER_SPEED * speedMult;
+  }
+
+  // Barrel slow effect: reduce horizontal speed for a short duration
+  if (player.barrelSlowTimer > 0) {
+    player.vx *= 0.5;
+    player.barrelSlowTimer--;
+  }
+
+  player.x += player.vx;
+
+  // Clamp player x within canvas
+  player.x = Math.max(20, Math.min(canvas.width - PLAYER_W - 20, player.x));
+
+  // Gravity
+  player.vy += GRAVITY;
+  player.y += player.vy;
+
+  // Ground collision
+  const gy = groundY() - (player.sliding ? PLAYER_H / 2 : PLAYER_H);
+  if (player.y >= gy) {
+    player.y = gy;
+    player.vy = 0;
+    player.onGround = true;
+    player.jumpsLeft = player.runPowerups['doublejump'] ? 3 : MAX_JUMPS_BASE;
+  } else {
+    player.onGround = false;
+  }
+
+  // Speed boost timer
+  if (player.speedBoostTimer > 0) player.speedBoostTimer--;
+
+  // Invincibility timer
+  if (player.invincible && player.invincibleTimer > 0) {
+    player.invincibleTimer--;
+    if (player.invincibleTimer <= 0) player.invincible = false;
+  }
+
+  // Slide timer
+  if (player.sliding && player.slideTimer > 0) {
+    player.slideTimer--;
+    if (player.slideTimer <= 0) player.sliding = false;
+  }
+
+  // Active powerup label timer
+  if (player.activePowerupTimer > 0) {
+    player.activePowerupTimer--;
+    if (player.activePowerupTimer <= 0) player.activePowerupLabel = '';
+  }
+
+  // Magnet
+  if (player.magnetActive && player.activePowerupTimer > 0) {
+    const pr = playerRect();
+    for (const s of scissorItems) {
+      if (s.collected) continue;
+      const dist = Math.hypot(s.x - (pr.x + pr.w/2), s.y - (pr.y + pr.h/2));
+      if (dist < 200) {
+        s.x += (pr.x + pr.w/2 - s.x) * 0.08;
+        s.y += (pr.y + pr.h/2 - s.y) * 0.08;
+      }
+    }
+  } else if (player.magnetActive && player.activePowerupTimer <= 0) {
+    player.magnetActive = false;
+  }
+
+  worldX += effectiveWallSpeed;
+
+  // ── Spawn Objects ──
+  wallSpawnTimer++;
+  if (wallSpawnTimer >= wallSpawnInterval) {
+    wallSpawnTimer = 0;
+    spawnWall();
+  }
+  barrelSpawnTimer++;
+  if (barrelSpawnTimer >= barrelSpawnInterval) {
+    barrelSpawnTimer = 0;
+    if (Math.random() < 0.6) spawnBarrel();
+  }
+  scissorSpawnTimer++;
+  if (scissorSpawnTimer >= scissorSpawnInterval) {
+    scissorSpawnTimer = 0;
+    if (Math.random() < 0.7) spawnScissors();
+  }
+  benSpawnTimer++;
+  if (benSpawnTimer >= benSpawnInterval) {
+    benSpawnTimer = 0;
+    if (Math.random() < 0.5) spawnBen();
+  }
+
+  const pr = playerRect();
+
+  // ── Update Walls ──
+  for (let i = walls.length - 1; i >= 0; i--) {
+    const w = walls[i];
+    w.x -= effectiveWallSpeed;
+    if (w.x + w.w < 0) { walls.splice(i, 1); continue; }
+
+    if (!player.invincible && rectOverlap(pr.x, pr.y, pr.w, pr.h, w.x, w.y, w.w, w.h)) {
+      hitPlayer();
+    }
+  }
+
+  // ── Update Barrels (cosmetic/slow) ──
+  for (let i = barrels.length - 1; i >= 0; i--) {
+    const b = barrels[i];
+    b.x -= effectiveWallSpeed;
+    if (b.x + b.w < 0) { barrels.splice(i, 1); continue; }
+
+    if (rectOverlap(pr.x, pr.y, pr.w, pr.h, b.x, b.y, b.w, b.h)) {
+      // Barrel: just slow the player briefly, no death
+      player.barrelSlowTimer = 30;
+      playHitSound();
+      barrels.splice(i, 1);
+    }
+  }
+
+  // ── Update Scissors ──
+  for (let i = scissorItems.length - 1; i >= 0; i--) {
+    const s = scissorItems[i];
+    s.x -= effectiveWallSpeed;
+    if (s.x + s.w < 0) { scissorItems.splice(i, 1); continue; }
+    if (s.collected) { scissorItems.splice(i, 1); continue; }
+
+    if (rectOverlap(pr.x, pr.y, pr.w, pr.h, s.x, s.y, s.w, s.h)) {
+      s.collected = true;
+      player.runScissors++;
+      totalScissors++;
+      saveScissors(totalScissors);
+      playCollectSound();
+    }
+  }
+
+  // ── Update Bens ──
+  for (let i = bens.length - 1; i >= 0; i--) {
+    const ben = bens[i];
+    if (ben.dead) {
+      ben.deadTimer--;
+      ben.x -= effectiveWallSpeed * 0.3;
+      if (ben.deadTimer <= 0) { bens.splice(i, 1); }
+      continue;
+    }
+    ben.x -= effectiveWallSpeed * 0.7;
+    if (ben.x + ben.w < 0) { bens.splice(i, 1); continue; }
+
+    // Player jumps on Ben = kill Ben
+    const wasAbove = player.vy > 0 && player.y + PLAYER_H < ben.y + 20;
+    if (wasAbove && rectOverlap(pr.x, pr.y, pr.w, pr.h, ben.x, ben.y, ben.w, ben.h)) {
+      ben.dead = true;
+      ben.deadTimer = 40;
+      player.vy = JUMP_VEL * 0.6; // bounce off
+      player.score += 50;
+      playBenSound();
+    } else if (!player.invincible && rectOverlap(pr.x, pr.y, pr.w, pr.h, ben.x, ben.y, ben.w, ben.h)) {
+      hitPlayer();
+      bens.splice(i, 1);
+    }
+  }
+}
+
+// ─── Hit Player ───────────────────────────────────────────────────────────────
+function hitPlayer() {
+  if (player.invincible) return;
+  if (player.shieldActive) {
+    player.shieldActive = false;
+    player.activePowerupLabel = '🛡️ Shield Used!';
+    player.activePowerupTimer = 90;
+    playHitSound();
+    return;
+  }
+  player.lives--;
+  playHitSound();
+  player.invincible = true;
+  player.invincibleTimer = 90; // brief invincibility after hit
+  if (player.lives <= 0) {
+    gameOver();
+  }
+}
+
+function gameOver() {
+  playGameOverSound();
+  gameState = STATES.GAMEOVER;
+}
+
+// ─── Drawing ──────────────────────────────────────────────────────────────────
+function drawBackground() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#0d0d2b');
+  grad.addColorStop(0.6, '#1a1a3e');
+  grad.addColorStop(1, '#111130');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Stars (static pattern offset by worldX)
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  const starSeeds = [17,31,47,61,79,97,113,127,149,163,179,193,211];
+  for (let i = 0; i < 30; i++) {
+    const seed = starSeeds[i % starSeeds.length];
+    const sx = ((seed * (i + 1) * 137 + worldX * 0.15) % (canvas.width + 20) + canvas.width + 20) % (canvas.width + 20);
+    const sy = (seed * (i + 3) * 73) % (canvas.height * 0.65);
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+
+  // Ground
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillRect(0, groundY(), canvas.width, canvas.height - groundY());
+  // Ground highlight
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(0, groundY(), canvas.width, 4);
+
+  // Ground texture lines
+  ctx.strokeStyle = '#1a0d00';
+  ctx.lineWidth = 1;
+  const lineSpacing = 60;
+  const lineOff = worldX % lineSpacing;
+  for (let x = -lineOff; x < canvas.width; x += lineSpacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, groundY() + 2);
+    ctx.lineTo(x + 20, groundY() + 2);
+    ctx.stroke();
+  }
+}
+
+function drawPlayer() {
+  const pr = playerRect();
+  const blink = player.invincible && Math.floor(frameCount / 4) % 2 === 0;
+  if (blink) return;
+
+  ctx.save();
+  if (player.invincible && !blink) ctx.globalAlpha = 0.8;
+
+  // Body silhouette (outline for visibility)
+  ctx.fillStyle = player.shieldActive ? '#3399ff' : '#3a3a6a';
+  ctx.fillRect(pr.x, pr.y, pr.w, pr.h);
+
+  // Ninja outfit (brighter blue)
+  ctx.fillStyle = player.shieldActive ? '#55aaff' : '#2244aa';
+  ctx.fillRect(pr.x + 4, pr.y + (player.sliding ? 0 : 12), pr.w - 8, pr.h - (player.sliding ? 8 : 24));
+
+  // Head (if not sliding)
+  if (!player.sliding) {
+    // Skin
+    ctx.fillStyle = '#f0c070';
+    ctx.fillRect(pr.x + 10, pr.y + 2, pr.w - 20, 14);
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(pr.x + 14, pr.y + 5, 8, 4);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(pr.x + 16, pr.y + 6, 4, 3);
+    // Bandana
+    ctx.fillStyle = '#ee2200';
+    ctx.fillRect(pr.x + 8, pr.y + 10, pr.w - 16, 5);
+    // Bandana knot
+    ctx.fillStyle = '#ff4422';
+    ctx.fillRect(pr.x + pr.w - 14, pr.y + 10, 8, 5);
+  }
+
+  // Legs
+  if (!player.sliding) {
+    const legAnim = Math.round(Math.sin(frameCount * 0.25) * 4) * (player.vx !== 0 ? 1 : 0);
+    ctx.fillStyle = '#1a1a6a';
+    ctx.fillRect(pr.x + 6, pr.y + pr.h - 14 + legAnim, 10, 14 - legAnim);
+    ctx.fillRect(pr.x + pr.w - 16, pr.y + pr.h - 14 - legAnim, 10, 14 + legAnim);
+    // Boots
+    ctx.fillStyle = '#cc4400';
+    ctx.fillRect(pr.x + 4, pr.y + pr.h - 6, 14, 6);
+    ctx.fillRect(pr.x + pr.w - 18, pr.y + pr.h - 6, 14, 6);
+  }
+
+  // White outline for visibility
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pr.x, pr.y, pr.w, pr.h);
+
+  // Shield aura
+  if (player.shieldActive) {
+    ctx.strokeStyle = 'rgba(50,150,255,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(pr.x + pr.w/2, pr.y + pr.h/2, pr.w/2 + 6, pr.h/2 + 6, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // Invincibility star aura
+  if (player.invincible && player.invincibleTimer > 60) {
+    ctx.strokeStyle = 'rgba(255,215,0,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(pr.x + pr.w/2, pr.y + pr.h/2, pr.w/2 + 8, pr.h/2 + 8, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawWalls() {
+  for (const w of walls) {
+    // Wall body
+    const grad = ctx.createLinearGradient(w.x, 0, w.x + w.w, 0);
+    grad.addColorStop(0, '#555');
+    grad.addColorStop(0.4, '#888');
+    grad.addColorStop(1, '#444');
+    ctx.fillStyle = grad;
+    ctx.fillRect(w.x, w.y, w.w, w.h);
+    // Edge shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(w.x + w.w - 4, w.y, 4, w.h);
+    // Top cap
+    ctx.fillStyle = '#aaa';
+    ctx.fillRect(w.x - 2, w.y, w.w + 4, 5);
+  }
+}
+
+function drawBarrels() {
+  for (const b of barrels) {
+    ctx.save();
+    // Barrel body
+    ctx.fillStyle = '#8B4513';
+    ctx.beginPath();
+    ctx.roundRect(b.x + 3, b.y, b.w - 6, b.h, 8);
+    ctx.fill();
+    // Barrel bands
+    ctx.fillStyle = '#5a2d0c';
+    ctx.fillRect(b.x + 2, b.y + 8, b.w - 4, 5);
+    ctx.fillRect(b.x + 2, b.y + b.h - 13, b.w - 4, 5);
+    // Highlight
+    ctx.fillStyle = 'rgba(255,200,100,0.25)';
+    ctx.fillRect(b.x + 6, b.y + 4, 8, b.h - 8);
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('🛢️', b.x + b.w/2, b.y + b.h/2 + 7);
+    ctx.restore();
+  }
+}
+
+function drawScissors() {
+  const t = frameCount * 0.05;
+  for (const s of scissorItems) {
+    if (s.collected) continue;
+    const bob = Math.sin(t + s.bobOffset) * 4;
+    ctx.save();
+    ctx.font = '22px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Glow
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 10;
+    ctx.fillText('✂️', s.x + s.w/2, s.y + s.h/2 + bob);
+    ctx.restore();
+  }
+}
+
+function drawBens() {
+  for (const ben of bens) {
+    ctx.save();
+    if (ben.dead) {
+      ctx.globalAlpha = ben.deadTimer / 40;
+      ctx.translate(ben.x + ben.w/2, ben.y + ben.h/2);
+      ctx.rotate((40 - ben.deadTimer) * 0.15);
+      ctx.translate(-(ben.w/2), -(ben.h/2));
+    }
+    // Ben body (simple)
+    ctx.fillStyle = ben.dead ? '#ff6600' : '#cc6600';
+    ctx.fillRect(0, 0, ben.w, ben.h);
+    // Ben face
+    ctx.fillStyle = '#ffcc88';
+    ctx.fillRect(8, 6, ben.w - 16, 28);
+    // Eyes
+    ctx.fillStyle = '#333';
+    ctx.fillRect(13, 12, 8, 8);
+    ctx.fillRect(ben.w - 21, 12, 8, 8);
+    // Nose
+    ctx.fillStyle = '#cc8866';
+    ctx.fillRect(ben.w/2 - 3, 22, 6, 5);
+    // Mouth
+    ctx.fillStyle = '#aa4400';
+    ctx.fillRect(12, 30, ben.w - 24, 5);
+    // Phone
+    ctx.fillStyle = '#222';
+    ctx.fillRect(ben.w - 16, 28, 10, 20);
+    ctx.fillStyle = '#44aaff';
+    ctx.fillRect(ben.w - 14, 30, 6, 12);
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('BEN', ben.w/2, ben.h - 8);
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  const pad = 12;
+  const lineH = 22;
+  const maxJ = player.runPowerups['doublejump'] ? 3 : MAX_JUMPS_BASE;
+  const jumpsLeft = player.jumpsLeft;
+  const jumpDots = [];
+  for (let i = 0; i < maxJ; i++) jumpDots.push(i < jumpsLeft ? '●' : '○');
+
+  ctx.save();
+  // HUD background
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.roundRect(pad, pad, 190, 140, 8);
+  ctx.fill();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left';
+
+  const lines = [
+    `Score: ${player.score}`,
+    `Speed: ${wallSpeed.toFixed(1)}`,
+    `Lives: ${'❤️'.repeat(player.lives)}`,
+    `Jumps: ${jumpDots.join(' ')}`,
+    `✂️  ${player.runScissors}  (total: ${totalScissors})`,
+  ];
+  lines.forEach((line, i) => {
+    ctx.fillText(line, pad + 10, pad + 18 + i * lineH);
+  });
+
+  // Active powerup
+  if (player.activePowerupLabel) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(`🔥 ${player.activePowerupLabel}`, pad + 10, pad + 18 + lines.length * lineH);
+  }
+  ctx.restore();
+
+  // Owned powerup quick bar (bottom)
+  drawPowerupBar();
+}
+
+function drawPowerupBar() {
+  const ownedThisRun = POWERUP_DEFS.filter(d => player.runPowerups[d.id]);
+  if (ownedThisRun.length === 0) return;
+  const bw = 44;
+  const gap = 6;
+  const totalW = ownedThisRun.length * (bw + gap) - gap;
+  const startX = (canvas.width - totalW) / 2;
+  const by = canvas.height - 60;
+
+  ctx.save();
+  ownedThisRun.forEach((def, i) => {
+    const bx = startX + i * (bw + gap);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.roundRect(bx, by, bw, 44, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = '22px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(def.icon, bx + bw/2, by + 25);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '9px Arial';
+    ctx.fillText(`[${i+1}]`, bx + bw/2, by + 40);
+  });
+  ctx.restore();
+}
+
+function drawMenu() {
+  drawBackground();
+  ctx.save();
+  // Title
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#4444ff';
+  ctx.shadowBlur = 20;
+  ctx.fillText('NINJA LOWTAPER', canvas.width/2, canvas.height/2 - 90);
+  ctx.font = '22px Arial';
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#aaaaff';
+  ctx.fillText('Press ENTER or click to play', canvas.width/2, canvas.height/2 - 40);
+
+  // Stats
+  ctx.fillStyle = '#ffd700';
+  ctx.font = '20px Arial';
+  ctx.fillText(`✂️ Total Scissors: ${totalScissors}`, canvas.width/2, canvas.height/2 + 10);
+
+  // SHOP button
+  ctx.fillStyle = '#1a3a6a';
+  ctx.roundRect(canvas.width/2 - 80, canvas.height/2 + 40, 160, 46, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#4a8aff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText('🛒 SHOP', canvas.width/2, canvas.height/2 + 70);
+
+  // Controls hint
+  ctx.fillStyle = '#777';
+  ctx.font = '13px Arial';
+  ctx.fillText('A/D or ←/→ to move  |  SPACE/↑ to jump  |  ↓ to slide', canvas.width/2, canvas.height - 20);
+  ctx.restore();
+}
+
+function drawGameOver() {
+  drawBackground();
+  ctx.save();
+  ctx.fillStyle = '#ff4444';
+  ctx.font = 'bold 52px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#ff0000';
+  ctx.shadowBlur = 20;
+  ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 100);
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff';
+  ctx.font = '22px Arial';
+  ctx.fillText(`Score: ${player.score}`, canvas.width/2, canvas.height/2 - 45);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillText(`✂️ Scissors this run: ${player.runScissors}`, canvas.width/2, canvas.height/2 - 10);
+  ctx.fillText(`✂️ Total Scissors: ${totalScissors}`, canvas.width/2, canvas.height/2 + 25);
+
+  ctx.fillStyle = '#aaaaff';
+  ctx.font = '20px Arial';
+  ctx.fillText('Press ENTER or click to play again', canvas.width/2, canvas.height/2 + 70);
+
+  // SHOP button
+  ctx.fillStyle = '#1a3a6a';
+  ctx.roundRect(canvas.width/2 - 80, canvas.height/2 + 95, 160, 46, 10);
+  ctx.fill();
+  ctx.strokeStyle = '#4a8aff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText('🛒 SHOP', canvas.width/2, canvas.height/2 + 125);
+
+  ctx.restore();
+}
+
+function drawGame() {
+  drawBackground();
+  drawWalls();
+  drawBarrels();
+  drawScissors();
+  drawBens();
+  drawPlayer();
+  drawHUD();
+}
+
+// ─── Shop Logic ───────────────────────────────────────────────────────────────
+const shopOverlay = document.getElementById('shopOverlay');
+const shopGrid = document.getElementById('shopGrid');
+const shopScissorsCount = document.getElementById('shopScissorsCount');
+const shopCloseBtn = document.getElementById('shopCloseBtn');
+
+function openShop() {
+  ownedPowerups = loadOwnedPowerups();
+  shopScissorsCount.textContent = `✂️ ${totalScissors} scissors`;
+  shopGrid.innerHTML = '';
+
+  POWERUP_DEFS.forEach(def => {
+    const owned = ownedPowerups.includes(def.id);
+    const el = document.createElement('div');
+    el.className = 'shopItem' + (owned ? ' owned' : '');
+    el.innerHTML = `
+      <div class="itemIcon">${def.icon}</div>
+      <div class="itemName">${def.name}</div>
+      <div class="itemDesc">${def.desc}</div>
+      <div class="itemPrice">✂️ ${def.price}</div>
+      <div class="itemRarity rarity-${def.rarity}">${def.rarity.charAt(0).toUpperCase() + def.rarity.slice(1)}</div>
+      ${owned ? '<div class="ownedBadge">✓ OWNED</div>' : ''}
+    `;
+    if (!owned) {
+      el.addEventListener('click', () => buyPowerup(def.id));
+    }
+    shopGrid.appendChild(el);
+  });
+
+  shopOverlay.classList.add('active');
+}
+
+function buyPowerup(id) {
+  const def = POWERUP_DEFS.find(d => d.id === id);
+  if (!def) return;
+  ownedPowerups = loadOwnedPowerups();
+  if (ownedPowerups.includes(id)) return;
+  if (totalScissors < def.price) {
+    // Flash message
+    const existing = document.getElementById('shopMsg');
+    if (existing) existing.remove();
+    const msg = document.createElement('div');
+    msg.id = 'shopMsg';
+    msg.style.cssText = 'text-align:center;color:#ff6666;font-size:15px;margin-top:-10px;margin-bottom:10px;';
+    msg.textContent = `❌ Not enough scissors! Need ✂️ ${def.price}`;
+    shopGrid.parentNode.insertBefore(msg, shopGrid);
+    setTimeout(() => msg.remove(), 2000);
+    return;
+  }
+  totalScissors -= def.price;
+  saveScissors(totalScissors);
+  ownedPowerups.push(id);
+  saveOwnedPowerups(ownedPowerups);
+  playPowerupSound();
+  openShop(); // refresh
+}
+
+function closeShop() {
+  shopOverlay.classList.remove('active');
+}
+
+shopCloseBtn.addEventListener('click', closeShop);
+shopOverlay.addEventListener('click', e => {
+  if (e.target === shopOverlay) closeShop();
+});
+
+// ─── Canvas Click Handling ────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (gameState === STATES.PLAYING) {
+    doJump();
+  } else if (gameState === STATES.MENU) {
+    // Shop button hit test
+    const bx = canvas.width/2 - 80, by = canvas.height/2 + 40, bw = 160, bh = 46;
+    if (mx >= bx && mx <= bx+bw && my >= by && my <= by+bh) {
+      openShop();
+      return;
+    }
+    startGame();
+  } else if (gameState === STATES.GAMEOVER) {
+    // Shop button hit test
+    const bx = canvas.width/2 - 80, by = canvas.height/2 + 95, bw = 160, bh = 46;
+    if (mx >= bx && mx <= bx+bw && my >= by && my <= by+bh) {
+      openShop();
+      return;
+    }
+    startGame();
+  }
+});
+
+// ─── Main Loop ────────────────────────────────────────────────────────────────
+function gameLoop() {
+  update();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (gameState === STATES.MENU) {
+    drawMenu();
+  } else if (gameState === STATES.PLAYING) {
+    drawGame();
+  } else if (gameState === STATES.GAMEOVER) {
+    drawGameOver();
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
