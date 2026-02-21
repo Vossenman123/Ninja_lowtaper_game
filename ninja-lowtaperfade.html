@@ -103,29 +103,6 @@
             box-shadow: 0 12px 0 #CC0066, 0 20px 40px rgba(0,0,0,0.5);
         }
 
-        .shopItemCard {
-            font-family: 'Press Start 2P', cursive;
-            background: rgba(255,255,255,0.05);
-            border: 2px solid #555;
-            border-radius: 10px;
-            padding: 15px;
-            color: white;
-            text-align: center;
-        }
-        .shopItemCard.common { border-color: #aaa; }
-        .shopItemCard.uncommon { border-color: #4CAF50; }
-        .shopItemCard.rare { border-color: #2196F3; }
-        .shopItemCard.epic { border-color: #9C27B0; }
-        .shopItemCard.legendary { border-color: #FFD700; }
-        .shopItemCard h3 { font-size: 0.7rem; margin-bottom: 8px; }
-        .shopItemCard .rarity { font-size: 0.55rem; margin-bottom: 6px; }
-        .shopItemCard .cost { font-size: 0.65rem; color: #00FF88; margin-bottom: 10px; }
-        .shopItemCard .desc { font-size: 0.5rem; color: #ccc; margin-bottom: 12px; line-height: 1.6; }
-        .buyBtn { font-family: 'Press Start 2P', cursive; font-size: 0.55rem; padding: 8px 14px; border: none; border-radius: 5px; cursor: pointer; background: #4CAF50; color: white; }
-        .buyBtn:disabled { background: #555; cursor: default; }
-        .buyBtn.owned { background: #2196F3; }
-        #shopScreen.hidden { display: none !important; }
-
         .startBtn:active {
             transform: translateY(0);
             box-shadow: 0 4px 0 #CC0066, 0 8px 15px rgba(0,0,0,0.4);
@@ -192,14 +169,37 @@
         .hidden {
             display: none !important;
         }
+        .shopItemCard {
+            font-family: 'Press Start 2P', cursive;
+            background: rgba(255,255,255,0.05);
+            border: 2px solid #555;
+            border-radius: 10px;
+            padding: 15px;
+            color: white;
+            text-align: center;
+        }
+        .shopItemCard.common { border-color: #aaa; }
+        .shopItemCard.uncommon { border-color: #4CAF50; }
+        .shopItemCard.rare { border-color: #2196F3; }
+        .shopItemCard.epic { border-color: #9C27B0; }
+        .shopItemCard.legendary { border-color: #FFD700; }
+        .shopItemCard h3 { font-size: 0.7rem; margin-bottom: 8px; }
+        .shopItemCard .rarity { font-size: 0.55rem; margin-bottom: 6px; }
+        .shopItemCard .cost { font-size: 0.65rem; color: #00FF88; margin-bottom: 10px; }
+        .shopItemCard .desc { font-size: 0.5rem; color: #ccc; margin-bottom: 12px; line-height: 1.6; }
+        .buyBtn { font-family: 'Press Start 2P', cursive; font-size: 0.55rem; padding: 8px 14px; border: none; border-radius: 5px; cursor: pointer; background: #4CAF50; color: white; }
+        .buyBtn:disabled { background: #555; cursor: default; }
+        .buyBtn.owned { background: #2196F3; }
+        #shopScreen.hidden { display: none !important; }
     </style>
 </head>
 <body>
     <div id="gameContainer">
         <canvas id="gameCanvas"></canvas>
+        
         <audio id="benSound1" src="https://github.com/user-attachments/files/25454631/talking-benn-ughhh.mp3" preload="auto"></audio>
         <audio id="benSound2" src="https://github.com/user-attachments/files/25454632/talkingg-benn-laughh.mp3" preload="auto"></audio>
-        
+
         <div id="hud">
             <div class="hudItem">SCORE: <span id="scoreText">0</span></div>
             <div class="hudItem">SPEED: <span id="speedText">1.0</span>x</div>
@@ -229,6 +229,12 @@
             <p class="scoreDisplay" style="font-size: 1.5rem;">HIGH SCORE: <span id="finalHighScore">0</span></p>
             <button class="startBtn" onclick="restartGame()">TRY AGAIN</button>
             <button class="startBtn" onclick="backToMenu()" style="margin-top: 1rem; font-size: 1rem; padding: 1rem 2rem;">MAIN MENU</button>
+        </div>
+        <div id="shopScreen" class="hidden" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;background:rgba(0,0,0,0.92);z-index:10;overflow-y:auto;padding:30px 20px;">
+            <h1 style="font-family:Bangers,cursive;font-size:3rem;color:#FFD700;text-shadow:4px 4px 0 #FF1493;margin-bottom:10px;">SHOP</h1>
+            <p style="color:#00FF88;font-size:0.8rem;margin-bottom:20px;">&#9986; <span id="shopScissors">0</span> scissors</p>
+            <div id="shopItems" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:15px;width:100%;max-width:900px;margin-bottom:20px;"></div>
+            <button class="startBtn" onclick="closeShop()" style="font-size:0.9rem;padding:0.8rem 2rem;">&#8592; BACK</button>
         </div>
     </div>
 
@@ -276,23 +282,22 @@
         let gameState = 'menu'; // menu, playing, gameover
         let score = 0;
         let highScore = localStorage.getItem('ninjaHighScore') || 0;
+        let baseSpeed = 0.875; // Reduced ~30% slower
         let scissorsCount = parseInt(localStorage.getItem('ninjaScissors') || '0');
         let scissors = []; // in-game scissor collectibles
         let magnetActive = false;
 
-        // Shop powerup definitions
         const SHOP_ITEMS = [
-            { id: 'speedBoost',    name: 'Speed Boost',   rarity: 'common',    cost: 300,  desc: '+20% move speed',              rarityColor: '#aaa'    },
-            { id: 'doubleJump',    name: 'Double Jump+',  rarity: 'uncommon',  cost: 600,  desc: 'Triple jump in mid-air',        rarityColor: '#4CAF50' },
-            { id: 'shield',        name: 'Shield',        rarity: 'rare',      cost: 1200, desc: 'One free hit protection',       rarityColor: '#2196F3' },
-            { id: 'magnet',        name: 'Magnet',        rarity: 'rare',      cost: 1800, desc: 'Attracts nearby scissors',      rarityColor: '#2196F3' },
-            { id: 'timeSlow',      name: 'Time Slow',     rarity: 'epic',      cost: 3000, desc: 'Slows wall speed temporarily',  rarityColor: '#9C27B0' },
-            { id: 'invincibility', name: 'Invincibility', rarity: 'legendary', cost: 5000, desc: 'Brief invincibility on start',  rarityColor: '#FFD700' }
+            { id: 'speedBoost',    name: 'Speed Boost',   rarity: 'common',    cost: 300,  desc: '+20% move speed',             rarityColor: '#aaa'    },
+            { id: 'doubleJump',    name: 'Double Jump+',  rarity: 'uncommon',  cost: 600,  desc: 'Triple jump in mid-air',       rarityColor: '#4CAF50' },
+            { id: 'shield',        name: 'Shield',        rarity: 'rare',      cost: 1200, desc: 'One free hit protection',      rarityColor: '#2196F3' },
+            { id: 'magnet',        name: 'Magnet',        rarity: 'rare',      cost: 1800, desc: 'Attracts nearby scissors',     rarityColor: '#2196F3' },
+            { id: 'timeSlow',      name: 'Time Slow',     rarity: 'epic',      cost: 3000, desc: 'Slows wall speed temporarily', rarityColor: '#9C27B0' },
+            { id: 'invincibility', name: 'Invincibility', rarity: 'legendary', cost: 5000, desc: 'Brief invincibility on start', rarityColor: '#FFD700' }
         ];
         function getPurchased() {
             try { return JSON.parse(localStorage.getItem('ninjaShop') || '{}'); } catch(e) { return {}; }
         }
-        let baseSpeed = 0.875; // Reduced ~30% from 1.25
         let speedMultiplier = 1.0;
         let lastSpeedIncrease = 0;
         let enemiesKilled = 0;
@@ -391,7 +396,6 @@
             backgroundObjects = [];
             ziplines = [];
             bouncePads = [];
-            scissors = [];
             
             deathWall.x = -100;
             lastPlatformX = 0;
@@ -401,7 +405,14 @@
             // Load high score
             highScore = localStorage.getItem('ninjaHighScore') || 0;
             document.getElementById('highScoreText').textContent = Math.floor(highScore);
+
+            // Load scissors and apply powerups
             scissorsCount = parseInt(localStorage.getItem('ninjaScissors') || '0');
+            const _pow = getPurchased();
+            magnetActive = !!_pow['magnet'];
+            if (_pow['shield']) lives = Math.max(lives, 1);
+            if (_pow['invincibility']) { invulnerable = true; invulnerableTimer = 360; }
+            if (_pow['doubleJump']) player.jumpsLeft = 3;
             
             // Create a safe starting platform directly under the player
             platforms.push({
@@ -433,12 +444,6 @@
             document.getElementById('startScreen').classList.add('hidden');
             playSound('start');
             init();
-            // Apply purchased powerups
-            const purchased = getPurchased();
-            magnetActive = !!purchased['magnet'];
-            if (purchased['shield']) lives = Math.max(lives, 1);
-            if (purchased['invincibility']) { invulnerable = true; invulnerableTimer = 360; }
-            if (purchased['doubleJump']) player.jumpsLeft = 3;
             gameState = 'playing';
             gameLoop();
         }
@@ -668,16 +673,6 @@
                 }
             }
             
-            // Spawn scissors collectibles randomly on platforms
-            if (lastPlatform.x > safeZoneEnd && Math.random() < 0.25) {
-                scissors.push({
-                    x: lastPlatform.x + 10 + Math.random() * Math.max(10, lastPlatform.width - 30),
-                    y: lastPlatform.y - 22,
-                    width: 18,
-                    height: 18
-                });
-            }
-            
             // Spawn ziplines between consecutive platforms
             if (lastPlatform.x > safeZoneEnd && platforms.length >= 2 && Math.random() < 0.14) {
                 const prev = platforms[platforms.length - 2];
@@ -697,6 +692,16 @@
                     width: 44,
                     height: 12,
                     squish: 0
+                });
+            }
+
+            // Spawn scissors collectibles on platforms
+            if (lastPlatform.x > safeZoneEnd && Math.random() < 0.25) {
+                scissors.push({
+                    x: lastPlatform.x + 10 + Math.random() * Math.max(10, lastPlatform.width - 30),
+                    y: lastPlatform.y - 22,
+                    width: 18,
+                    height: 18
                 });
             }
         }
@@ -865,14 +870,13 @@
             const timeSlowFactor = getPurchased()['timeSlow'] ? 0.5 : 1.0;
             deathWall.x += baseSpeed * wallSpeedMultiplier * timeSlowFactor;
             
-            // Player movement (speed boost powerup applies here)
-            const _purchased = getPurchased();
-            const speedBonus = _purchased['speedBoost'] ? 1.2 : 1.0;
+            // Player movement
+            const _speedBonus = getPurchased()['speedBoost'] ? 1.2 : 1.0;
             if (keys.a) {
-                player.x -= currentSpeed * 0.8 * speedBonus;
+                player.x -= currentSpeed * 0.8 * _speedBonus;
             }
             if (keys.d) {
-                player.x += currentSpeed * 0.8 * speedBonus;
+                player.x += currentSpeed * 0.8 * _speedBonus;
             }
             
             // Jumping - double jump
@@ -949,10 +953,10 @@
                 }
             }
             
-            // Gravity (skip if on zipline) - stronger when falling for fluid arc
+            // Gravity (skip if on zipline)
             if (!player.onZipline) {
-                const fallGravity = player.velocityY > 0 ? 0.75 : 0.45;
-                player.velocityY += fallGravity;
+                const _fallGrav = player.velocityY > 0 ? 0.75 : 0.45;
+                player.velocityY += _fallGrav;
                 player.velocityY = Math.min(player.velocityY, 18);
                 player.y += player.velocityY;
             }
@@ -1126,7 +1130,7 @@
                                    player.y < obstacle.y + obstacle.height;
                     }
                 } else if (obstacle.type === 'jumpOn') {
-                    // Barrel (subType 2) is decorative - no side damage
+                    // Barrel (subType 2) is decorative - no side collision damage
                     if (obstacle.subType !== 2) {
                         const hitFromSide = player.x + player.width > obstacle.x &&
                                            player.x < obstacle.x + obstacle.width &&
@@ -1173,37 +1177,6 @@
                 }
             }
             
-            // Update scissors collectibles
-            for (let i = scissors.length - 1; i >= 0; i--) {
-                const sc = scissors[i];
-                sc.x -= currentSpeed;
-                
-                // Magnet attraction
-                if (magnetActive) {
-                    const dx = (player.x + player.width / 2) - (sc.x + sc.width / 2);
-                    const dy = (player.y + player.height / 2) - (sc.y + sc.height / 2);
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < 200 && dist > 0) {
-                        sc.x += dx / dist * 4;
-                        sc.y += dy / dist * 4;
-                    }
-                }
-                
-                // Collect
-                if (player.x + player.width > sc.x &&
-                    player.x < sc.x + sc.width &&
-                    player.y + player.height > sc.y &&
-                    player.y < sc.y + sc.height) {
-                    scissorsCount++;
-                    localStorage.setItem('ninjaScissors', scissorsCount);
-                    createParticles(sc.x + sc.width / 2, sc.y + sc.height / 2, '#00FF88', 6);
-                    scissors.splice(i, 1);
-                    continue;
-                }
-                
-                if (sc.x + sc.width < 0) scissors.splice(i, 1);
-            }
-            
             // Update projectiles
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const proj = projectiles[i];
@@ -1216,23 +1189,24 @@
                     if (proj.x > enemy.x && proj.x < enemy.x + enemy.width &&
                         proj.y > enemy.y && proj.y < enemy.y + enemy.height) {
                         
+                        const _killedEnemy = enemies[j];
                         enemies.splice(j, 1);
                         projectiles.splice(i, 1);
                         
+                        // Ben death sound
+                        if (_killedEnemy && _killedEnemy.type === 'ben') {
+                            const _benSnd = Math.random() < 0.5
+                                ? document.getElementById('benSound1')
+                                : document.getElementById('benSound2');
+                            if (_benSnd) { _benSnd.currentTime = 0; _benSnd.play().catch(() => {}); }
+                        }
+
                         playSound('kill');
                         score += 200;
                         enemiesKilled++;
                         
                         if (enemiesKilled % 20 === 0) {
                             lives++;
-                        }
-                        
-                        // Ben death sound
-                        if (enemy.type === 'ben') {
-                            const benSnd = Math.random() < 0.5
-                                ? document.getElementById('benSound1')
-                                : document.getElementById('benSound2');
-                            if (benSnd) { benSnd.currentTime = 0; benSnd.play().catch(() => {}); }
                         }
                         
                         createParticles(enemy.x, enemy.y, '#FFD700', 15);
@@ -1326,7 +1300,39 @@
             if (wallScreen < 80) {
                 camera.x = deathWall.x - 80;
             }
-            // Camera fixed - no auto-drift (no auto-movement)
+            // Update scissors collectibles
+            for (let _si = scissors.length - 1; _si >= 0; _si--) {
+                const _sc = scissors[_si];
+                _sc.x -= currentSpeed;
+
+                // Magnet attraction
+                if (magnetActive) {
+                    const _dx = (player.x + player.width / 2) - (_sc.x + _sc.width / 2);
+                    const _dy = (player.y + player.height / 2) - (_sc.y + _sc.height / 2);
+                    const _dist = Math.sqrt(_dx * _dx + _dy * _dy);
+                    if (_dist < 200 && _dist > 0) {
+                        _sc.x += _dx / _dist * 4;
+                        _sc.y += _dy / _dist * 4;
+                    }
+                }
+
+                // Collect scissors
+                if (player.x + player.width > _sc.x &&
+                    player.x < _sc.x + _sc.width &&
+                    player.y + player.height > _sc.y &&
+                    player.y < _sc.y + _sc.height) {
+                    scissorsCount++;
+                    localStorage.setItem('ninjaScissors', scissorsCount);
+                    createParticles(_sc.x + _sc.width / 2, _sc.y + _sc.height / 2, '#00FF88', 6);
+                    scissors.splice(_si, 1);
+                    continue;
+                }
+
+                if (_sc.x + _sc.width < 0) scissors.splice(_si, 1);
+            }
+
+            // Camera position locked - player moves with keys only
+
         }
 
         function createParticles(x, y, color, count) {
@@ -1705,33 +1711,6 @@
                 }
             }
             
-            // Draw scissors collectibles
-            for (let sc of scissors) {
-                const sx = sc.x, sy = sc.y;
-                ctx.save();
-                ctx.translate(sx + sc.width / 2, sy + sc.height / 2);
-                ctx.rotate(Math.sin(Date.now() / 400 + sx) * 0.3);
-                // Glow
-                ctx.globalAlpha = 0.25 + 0.15 * Math.sin(Date.now() / 300);
-                ctx.fillStyle = '#00FF88';
-                ctx.beginPath();
-                ctx.arc(0, 0, 11, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1;
-                // Blades
-                ctx.strokeStyle = '#00FF88';
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                ctx.beginPath(); ctx.moveTo(-6, -6); ctx.lineTo(6, 6); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(6, -6); ctx.lineTo(-6, 6); ctx.stroke();
-                // Handles
-                ctx.strokeStyle = '#007744';
-                ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.arc(-7, -7, 3, 0, Math.PI * 2); ctx.stroke();
-                ctx.beginPath(); ctx.arc(7, -7, 3, 0, Math.PI * 2); ctx.stroke();
-                ctx.restore();
-            }
-            
             // Draw death wall
             const wallGradient = ctx.createLinearGradient(deathWall.x, 0, deathWall.x + 50, 0);
             wallGradient.addColorStop(0, '#8B0000');
@@ -1928,6 +1907,29 @@
             // Restore context (end camera transform)
             ctx.restore();
             
+            // Draw scissors collectibles
+            for (const _sc of scissors) {
+                ctx.save();
+                ctx.translate(_sc.x + _sc.width / 2, _sc.y + _sc.height / 2);
+                ctx.rotate(Math.sin(Date.now() / 400 + _sc.x) * 0.3);
+                ctx.globalAlpha = 0.25 + 0.15 * Math.sin(Date.now() / 300);
+                ctx.fillStyle = '#00FF88';
+                ctx.beginPath();
+                ctx.arc(0, 0, 11, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = '#00FF88';
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(-6, -6); ctx.lineTo(6, 6); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(6, -6); ctx.lineTo(-6, 6); ctx.stroke();
+                ctx.strokeStyle = '#007744';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(-7, -7, 3, 0, Math.PI * 2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(7, -7, 3, 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+            }
+
             // Update HUD (drawn without camera transform)
             document.getElementById('scoreText').textContent = Math.floor(score);
             document.getElementById('speedText').textContent = speedMultiplier.toFixed(1);
@@ -1971,6 +1973,13 @@
             document.getElementById('gameOverScreen').classList.remove('hidden');
         }
 
+        function gameLoop() {
+            if (gameState === 'playing') {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+        }
 
         function openShop() {
             document.getElementById('startScreen').classList.add('hidden');
@@ -1984,47 +1993,39 @@
         }
 
         function renderShop() {
-            const purchased = getPurchased();
+            const _owned = getPurchased();
             document.getElementById('shopScissors').textContent = scissorsCount;
-            const container = document.getElementById('shopItems');
-            container.innerHTML = '';
-            for (const item of SHOP_ITEMS) {
-                const owned = !!purchased[item.id];
-                const canAfford = scissorsCount >= item.cost;
-                const card = document.createElement('div');
-                card.className = 'shopItemCard ' + item.rarity;
-                const btnLabel = owned ? 'OWNED' : (canAfford ? 'BUY' : 'NEED &#9986;' + item.cost);
-                const btnDisabled = (owned || !canAfford) ? 'disabled' : '';
-                const btnClass = owned ? 'buyBtn owned' : 'buyBtn';
-                card.innerHTML =
-                    '<h3>' + item.name + '</h3>' +
-                    '<div class="rarity" style="color:' + item.rarityColor + '">' + item.rarity.toUpperCase() + '</div>' +
-                    '<div class="desc">' + item.desc + '</div>' +
-                    '<div class="cost">&#9986; ' + item.cost + ' scissors</div>' +
-                    '<button class="' + btnClass + '" ' + btnDisabled + ' onclick="buyItem(\'' + item.id + '\')">' + btnLabel + '</button>';
-                container.appendChild(card);
+            const _container = document.getElementById('shopItems');
+            _container.innerHTML = '';
+            for (const _item of SHOP_ITEMS) {
+                const _isOwned = !!_owned[_item.id];
+                const _canAfford = scissorsCount >= _item.cost;
+                const _card = document.createElement('div');
+                _card.className = 'shopItemCard ' + _item.rarity;
+                const _btnLabel = _isOwned ? 'OWNED' : (_canAfford ? 'BUY' : 'NEED &#9986;' + _item.cost);
+                const _btnDisabled = (_isOwned || !_canAfford) ? 'disabled' : '';
+                const _btnClass = _isOwned ? 'buyBtn owned' : 'buyBtn';
+                _card.innerHTML =
+                    '<h3>' + _item.name + '</h3>' +
+                    '<div class="rarity" style="color:' + _item.rarityColor + '">' + _item.rarity.toUpperCase() + '</div>' +
+                    '<div class="desc">' + _item.desc + '</div>' +
+                    '<div class="cost">&#9986; ' + _item.cost + ' scissors</div>' +
+                    '<button class="' + _btnClass + '" ' + _btnDisabled + ' onclick="buyItem(\'' + _item.id + '\')">' + _btnLabel + '</button>';
+                _container.appendChild(_card);
             }
         }
 
         function buyItem(id) {
-            const item = SHOP_ITEMS.find(i => i.id === id);
-            if (!item) return;
-            const purchased = getPurchased();
-            if (purchased[id]) return;
-            if (scissorsCount < item.cost) return;
-            scissorsCount -= item.cost;
+            const _item = SHOP_ITEMS.find(i => i.id === id);
+            if (!_item) return;
+            const _owned = getPurchased();
+            if (_owned[id]) return;
+            if (scissorsCount < _item.cost) return;
+            scissorsCount -= _item.cost;
             localStorage.setItem('ninjaScissors', scissorsCount);
-            purchased[id] = true;
-            localStorage.setItem('ninjaShop', JSON.stringify(purchased));
+            _owned[id] = true;
+            localStorage.setItem('ninjaShop', JSON.stringify(_owned));
             renderShop();
-        }
-
-        function gameLoop() {
-            if (gameState === 'playing') {
-                update();
-                draw();
-                requestAnimationFrame(gameLoop);
-            }
         }
     </script>
 </body>
