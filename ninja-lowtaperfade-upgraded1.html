@@ -169,6 +169,71 @@
         .hidden {
             display: none !important;
         }
+
+        #shopOverlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.92);
+            z-index: 20;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow-y: auto;
+        }
+        #shopOverlay.open { display: flex; }
+        .shopTitle {
+            font-family: 'Bangers', cursive;
+            font-size: 3rem; color: #FFD700;
+            text-shadow: 3px 3px 0 #FF1493;
+            margin-bottom: 1rem;
+        }
+        .shopGrid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem; max-width: 750px; padding: 1rem;
+        }
+        .shopCard {
+            background: rgba(30,30,60,0.95);
+            border: 3px solid #555;
+            border-radius: 12px;
+            padding: 1rem; text-align: center;
+            cursor: pointer; transition: transform 0.2s, border-color 0.2s;
+        }
+        .shopCard:hover { transform: scale(1.05); }
+        .shopCard.common { border-color: #AAA; }
+        .shopCard.uncommon { border-color: #2ECC71; }
+        .shopCard.rare { border-color: #3498DB; }
+        .shopCard.epic { border-color: #9B59B6; }
+        .shopCard.legendary { border-color: #F1C40F; }
+        .shopCard .icon { font-size: 2.5rem; }
+        .shopCard .name { font-family: 'Press Start 2P', cursive; font-size: 0.65rem; color: #FFF; margin: 0.5rem 0; }
+        .shopCard .price { font-family: 'Press Start 2P', cursive; font-size: 0.7rem; color: #FFD700; }
+        .shopCard .owned { font-family: 'Press Start 2P', cursive; font-size: 0.55rem; color: #2ECC71; }
+        .shopCard .rarity { font-size: 0.5rem; margin-bottom: 0.3rem; }
+        .shopCard .rarity.common { color: #AAA; }
+        .shopCard .rarity.uncommon { color: #2ECC71; }
+        .shopCard .rarity.rare { color: #3498DB; }
+        .shopCard .rarity.epic { color: #9B59B6; }
+        .shopCard .rarity.legendary { color: #F1C40F; }
+        .shopCloseBtn {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1rem; padding: 0.8rem 2rem; margin-top: 1rem;
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white; border: 3px solid #FFD700; border-radius: 8px; cursor: pointer;
+        }
+        .shopBalance {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1rem; color: #FFD700; margin-bottom: 0.5rem;
+        }
+        .shopBtn {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.9rem; padding: 0.8rem 1.5rem; margin-top: 0.5rem;
+            background: linear-gradient(45deg, #9B59B6, #8E44AD);
+            color: white; border: 3px solid #FFD700; border-radius: 8px; cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .shopBtn:hover { transform: translateY(-3px); }
     </style>
 </head>
 <body>
@@ -180,10 +245,12 @@
             <div class="hudItem">SPEED: <span id="speedText">1.0</span>x</div>
             <div class="hudItem">LIVES: <span id="livesText">0</span></div>
             <div class="hudItem">JUMPS: <span id="jumpsText">●●</span></div>
+            <div class="hudItem">✂️: <span id="scissorsText">0</span></div>
+            <div class="hudItem" id="powerupHud" style="color:#FFD700;"></div>
         </div>
 
         <div id="controls">
-            W/SPACE: Jump (×2 air) | A/D: Move | S: Slide | E: Grapple / Grab Zipline | Mouse: Shoot
+            W/SPACE: Jump (×2 air) | A/D/←/→: Move | S: Slide | E: Grapple / Grab Zipline | Mouse: Shoot | 1-6: Powerups
         </div>
 
         <div id="startScreen">
@@ -194,14 +261,24 @@
             </div>
             <p class="subtitle">THE WALL IS COMING! SURVIVE AS LONG AS YOU CAN!</p>
             <button class="startBtn" onclick="startGame()">PRESS START</button>
+            <button class="shopBtn" onclick="openShop()" style="margin-top: 1rem;">🛒 SHOP</button>
         </div>
 
         <div id="gameOverScreen" class="hidden">
             <h1 class="wastedText">WASTED...</h1>
             <p class="scoreDisplay">SCORE: <span id="finalScore">0</span></p>
+            <p class="scoreDisplay" style="font-size: 1.2rem;">✂️ THIS RUN: <span id="runScissorsText">0</span></p>
             <p class="scoreDisplay" style="font-size: 1.5rem;">HIGH SCORE: <span id="finalHighScore">0</span></p>
             <button class="startBtn" onclick="restartGame()">TRY AGAIN</button>
+            <button class="shopBtn" onclick="openShop()" style="margin-top: 0.5rem;">🛒 SHOP</button>
             <button class="startBtn" onclick="backToMenu()" style="margin-top: 1rem; font-size: 1rem; padding: 1rem 2rem;">MAIN MENU</button>
+        </div>
+
+        <div id="shopOverlay">
+            <h1 class="shopTitle">⚔️ POWERUP SHOP ⚔️</h1>
+            <p class="shopBalance">✂️ <span id="shopBalance">0</span></p>
+            <div class="shopGrid" id="shopGrid"></div>
+            <button class="shopCloseBtn" onclick="closeShop()">CLOSE</button>
         </div>
     </div>
 
@@ -249,13 +326,35 @@
         let gameState = 'menu'; // menu, playing, gameover
         let score = 0;
         let highScore = localStorage.getItem('ninjaHighScore') || 0;
-        let baseSpeed = 1.25; // Reduced from 2.5 to 1.25 (50% slower)
+        let baseSpeed = 3.5;
         let speedMultiplier = 1.0;
         let lastSpeedIncrease = 0;
         let enemiesKilled = 0;
         let lives = 0;
         let invulnerable = false;
         let invulnerableTimer = 0;
+
+        // Gravity constant
+        const GRAVITY = 0.6;
+
+        // Scissors currency
+        let scissors = [];
+        let totalScissors = parseInt(localStorage.getItem('ninjaScissors')) || 0;
+        let runScissors = 0;
+
+        // Powerup definitions
+        const POWERUPS = [
+            { id: 0, name: 'Speed Boost', icon: '⚡', rarity: 'common', price: 300, duration: 600, desc: '25% faster for 10s' },
+            { id: 1, name: 'Double Jump+', icon: '🦅', rarity: 'common', price: 600, duration: 600, desc: '3 jumps instead of 2' },
+            { id: 2, name: 'Shield', icon: '🛡️', rarity: 'uncommon', price: 1000, duration: 1, desc: 'Block one hit' },
+            { id: 3, name: 'Magnet', icon: '🧲', rarity: 'rare', price: 1800, duration: 600, desc: 'Attract nearby scissors' },
+            { id: 4, name: 'Slow-Mo', icon: '⏳', rarity: 'epic', price: 3000, duration: 480, desc: 'Slow wall for 8s' },
+            { id: 5, name: 'Invincibility', icon: '⭐', rarity: 'legendary', price: 5000, duration: 300, desc: 'Invincible for 5s' }
+        ];
+        let ownedPowerups = JSON.parse(localStorage.getItem('ninjaOwnedPowerups')) || [0,0,0,0,0,0];
+        let activePowerup = null;
+        let powerupTimer = 0;
+        let shieldActive = false;
 
         // Keys
         const keys = {
@@ -286,6 +385,7 @@
             normalHeight: 60,
             jumpsLeft: 2,
             jumpHeld: false,
+            barrelSlowTimer: 0,
             // Zipline state
             onZipline: false,
             zipline: null,
@@ -308,6 +408,7 @@
         let backgroundObjects = [];
         let ziplines = [];
         let bouncePads = [];
+        let scissorPickups = [];
 
         // Death wall
         const deathWall = {
@@ -327,14 +428,19 @@
             lives = 0;
             invulnerable = false;
             invulnerableTimer = 0;
+            runScissors = 0;
+            activePowerup = null;
+            powerupTimer = 0;
+            shieldActive = false;
             
             player.x = 200;
-            player.y = canvas.height - 250; // Spawn higher up, not near lava
+            player.y = canvas.height - 250;
             player.velocityY = 0;
             player.isJumping = false;
             player.isSliding = false;
             player.jumpsLeft = 2;
             player.jumpHeld = false;
+            player.barrelSlowTimer = 0;
             player.onZipline = false;
             player.zipline = null;
             player.ziplineT = 0;
@@ -348,15 +454,17 @@
             backgroundObjects = [];
             ziplines = [];
             bouncePads = [];
+            scissorPickups = [];
             
             deathWall.x = -100;
             lastPlatformX = 0;
             difficulty = 0;
             safeZoneEnd = 1200; // Extended safe zone
             
-            // Load high score
+            // Load high score and scissors
             highScore = localStorage.getItem('ninjaHighScore') || 0;
             document.getElementById('highScoreText').textContent = Math.floor(highScore);
+            totalScissors = parseInt(localStorage.getItem('ninjaScissors')) || 0;
             
             // Create a safe starting platform directly under the player
             platforms.push({
@@ -638,28 +746,45 @@
                     squish: 0
                 });
             }
+            
+            // Spawn scissors collectibles on platforms
+            if (Math.random() < 0.35 && lastPlatform.width > 60) {
+                const tiers = [30, 50, 70, 90];
+                const tier = tiers[Math.floor(Math.random() * tiers.length)];
+                scissorPickups.push({
+                    x: lastPlatform.x + 20 + Math.random() * (lastPlatform.width - 40),
+                    y: lastPlatform.y - tier,
+                    width: 20,
+                    height: 20,
+                    bobOffset: Math.random() * Math.PI * 2
+                });
+            }
         }
 
         // Input handlers
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
-            if (key === 'w') keys.w = true;
-            if (key === 'a') keys.a = true;
-            if (key === 's') keys.s = true;
-            if (key === 'd') keys.d = true;
+            if (key === 'w' || key === 'arrowup') keys.w = true;
+            if (key === 'a' || key === 'arrowleft') keys.a = true;
+            if (key === 's' || key === 'arrowdown') keys.s = true;
+            if (key === 'd' || key === 'arrowright') keys.d = true;
             if (key === 'e') keys.e = true;
             if (key === ' ') {
                 keys.space = true;
                 e.preventDefault();
             }
+            // Powerup activation (keys 1-6)
+            if (gameState === 'playing' && key >= '1' && key <= '6') {
+                activatePowerup(parseInt(key) - 1);
+            }
         });
 
         document.addEventListener('keyup', (e) => {
             const key = e.key.toLowerCase();
-            if (key === 'w') keys.w = false;
-            if (key === 'a') keys.a = false;
-            if (key === 's') keys.s = false;
-            if (key === 'd') keys.d = false;
+            if (key === 'w' || key === 'arrowup') keys.w = false;
+            if (key === 'a' || key === 'arrowleft') keys.a = false;
+            if (key === 's' || key === 'arrowdown') keys.s = false;
+            if (key === 'd' || key === 'arrowright') keys.d = false;
             if (key === 'e') keys.e = false;
             if (key === ' ') keys.space = false;
         });
@@ -779,53 +904,168 @@
             });
         }
 
+        // Ben kill sound - 4 random tone sequences
+        function playBenKillSound() {
+            const variant = Math.floor(Math.random() * 4);
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            const t = audioContext.currentTime;
+            switch (variant) {
+                case 0: // "Hmm" — low descending tones
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(220, t);
+                    osc.frequency.linearRampToValueAtTime(150, t + 0.3);
+                    gain.gain.setValueAtTime(0.35, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35);
+                    osc.start(t); osc.stop(t + 0.35);
+                    break;
+                case 1: // "No." — short square wave buzz
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(180, t);
+                    osc.frequency.setValueAtTime(120, t + 0.08);
+                    gain.gain.setValueAtTime(0.25, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+                    osc.start(t); osc.stop(t + 0.15);
+                    break;
+                case 2: // "Hello?" — rising sine wave
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(300, t);
+                    osc.frequency.linearRampToValueAtTime(500, t + 0.15);
+                    osc.frequency.linearRampToValueAtTime(550, t + 0.25);
+                    gain.gain.setValueAtTime(0.3, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+                    osc.start(t); osc.stop(t + 0.3);
+                    break;
+                case 3: // "Yes." — quick ascending beep
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, t);
+                    osc.frequency.linearRampToValueAtTime(600, t + 0.06);
+                    osc.frequency.setValueAtTime(650, t + 0.1);
+                    gain.gain.setValueAtTime(0.3, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+                    osc.start(t); osc.stop(t + 0.12);
+                    break;
+            }
+        }
+
+        // Powerup activation
+        function activatePowerup(index) {
+            if (index < 0 || index > 5) return;
+            if (ownedPowerups[index] <= 0) return;
+            if (activePowerup !== null) return; // already active
+            ownedPowerups[index]--;
+            localStorage.setItem('ninjaOwnedPowerups', JSON.stringify(ownedPowerups));
+            activePowerup = index;
+            powerupTimer = POWERUPS[index].duration;
+            if (index === 2) shieldActive = true; // Shield
+            playSound('start');
+        }
+
+        // Shop functions
+        function openShop() {
+            totalScissors = parseInt(localStorage.getItem('ninjaScissors')) || 0;
+            ownedPowerups = JSON.parse(localStorage.getItem('ninjaOwnedPowerups')) || [0,0,0,0,0,0];
+            document.getElementById('shopBalance').textContent = totalScissors;
+            const grid = document.getElementById('shopGrid');
+            grid.innerHTML = '';
+            for (const pu of POWERUPS) {
+                const card = document.createElement('div');
+                card.className = 'shopCard ' + pu.rarity;
+                card.innerHTML = '<div class="rarity ' + pu.rarity + '">' + pu.rarity.toUpperCase() + '</div>' +
+                    '<div class="icon">' + pu.icon + '</div>' +
+                    '<div class="name">' + pu.name + '</div>' +
+                    '<div style="color:#AAA;font-size:0.5rem;font-family:sans-serif;">' + pu.desc + '</div>' +
+                    '<div class="price">✂️ ' + pu.price + '</div>' +
+                    '<div class="owned">Owned: ' + ownedPowerups[pu.id] + '</div>';
+                card.onclick = () => buyPowerup(pu.id);
+                grid.appendChild(card);
+            }
+            document.getElementById('shopOverlay').classList.add('open');
+        }
+
+        function closeShop() {
+            document.getElementById('shopOverlay').classList.remove('open');
+        }
+
+        function buyPowerup(id) {
+            const pu = POWERUPS[id];
+            if (totalScissors >= pu.price) {
+                totalScissors -= pu.price;
+                ownedPowerups[id]++;
+                localStorage.setItem('ninjaScissors', totalScissors);
+                localStorage.setItem('ninjaOwnedPowerups', JSON.stringify(ownedPowerups));
+                openShop(); // refresh
+            }
+        }
+
         function update() {
             if (gameState !== 'playing') return;
             
             // Update score
             score += 20 * (1/60); // 20 points per second
             
-            // Increase speed every 30 seconds
-            if (Math.floor(score / 600) > lastSpeedIncrease) {
-                speedMultiplier += 0.2;
-                lastSpeedIncrease = Math.floor(score / 600);
+            // Increase speed every 10 seconds, ramp +0.3, cap at 7
+            if (Math.floor(score / 200) > lastSpeedIncrease) {
+                speedMultiplier = Math.min(speedMultiplier + 0.3, 7 / baseSpeed);
+                lastSpeedIncrease = Math.floor(score / 200);
             }
             
-            const currentSpeed = baseSpeed * speedMultiplier;
+            let currentSpeed = baseSpeed * speedMultiplier;
+            // Barrel slow effect
+            if (player.barrelSlowTimer > 0) {
+                player.barrelSlowTimer--;
+                currentSpeed *= 0.5;
+            }
+            // Speed boost powerup
+            if (activePowerup === 0) currentSpeed *= 1.25;
             
-            // Update death wall - starts extremely slow at 0.08x player speed and increases very gradually
-            // Wall speed formula: baseSpeed * (0.08 + speedMultiplier * 0.05)
-            // At 1x player speed: wall is 0.08x (extremely slow start)
-            // At 2x player speed: wall is 0.13x  
-            // At 3x player speed: wall is 0.18x
-            // At 5x player speed: wall is 0.28x
-            // At 10x player speed: wall is 0.53x
-            const wallSpeedMultiplier = 0.08 + (speedMultiplier - 1.0) * 0.05;
-            deathWall.x += baseSpeed * wallSpeedMultiplier;
+            // Wall speed: ramp +0.3 every 10s, cap at 7
+            const wallSpeed = Math.min(baseSpeed * (0.08 + (speedMultiplier - 1.0) * 0.05), 7);
+            // Slow-Mo powerup halves wall speed
+            deathWall.x += (activePowerup === 4) ? wallSpeed * 0.5 : wallSpeed;
             
-            // Player movement
+            // Player movement: compensate for world scroll so player stays still unless keys pressed
+            player.x += currentSpeed; // drift with world
             if (keys.a) {
-                player.x -= currentSpeed * 0.8;
+                player.x -= currentSpeed * 1.8;
             }
             if (keys.d) {
                 player.x += currentSpeed * 0.8;
             }
             
+            // Powerup timer
+            if (activePowerup !== null) {
+                powerupTimer--;
+                if (powerupTimer <= 0) {
+                    if (activePowerup === 2) shieldActive = false;
+                    activePowerup = null;
+                }
+            }
+            
+            // Invincibility powerup
+            if (activePowerup === 5) {
+                invulnerable = true;
+                invulnerableTimer = 2; // keep refreshed
+            }
+            
             // Jumping - double jump
+            const maxJumps = (activePowerup === 1) ? 3 : 2;
             const jumpPressed = keys.w || keys.space;
             if (jumpPressed && !player.jumpHeld) {
                 if (!player.isJumping) {
                     // First jump (from ground)
-                    player.velocityY = -13;
+                    player.velocityY = -14;
                     player.isJumping = true;
-                    player.jumpsLeft = 1;
+                    player.jumpsLeft = maxJumps - 1;
                     player.jumpHeld = true;
                     fartAudio.currentTime = 0;
                     fartAudio.play().catch(() => {});
                 } else if (player.jumpsLeft > 0) {
-                    // Double jump (mid-air)
-                    player.velocityY = -11;
-                    player.jumpsLeft = 0;
+                    // Air jump
+                    player.velocityY = -12;
+                    player.jumpsLeft--;
                     player.jumpHeld = true;
                     createParticles(player.x + player.width / 2, player.y + player.height, '#00FFFF', 8);
                     fartAudio.currentTime = 0;
@@ -840,7 +1080,7 @@
             if (player.onZipline && jumpPressed && !player.jumpHeld) {
                 player.onZipline = false;
                 player.zipline = null;
-                player.velocityY = -13;
+                player.velocityY = -14;
                 player.isJumping = true;
                 player.jumpsLeft = 0;
                 player.jumpHeld = true;
@@ -887,7 +1127,7 @@
             
             // Gravity (skip if on zipline)
             if (!player.onZipline) {
-                player.velocityY += 0.5;
+                player.velocityY += GRAVITY;
                 player.y += player.velocityY;
             }
             
@@ -903,7 +1143,7 @@
                     player.y = platform.y - player.height;
                     player.velocityY = 0;
                     player.isJumping = false;
-                    player.jumpsLeft = 2;
+                    player.jumpsLeft = maxJumps;
                     // Trigger crumble on landing
                     if (platform.crumble && platform.crumbleTimer < 0) {
                         platform.crumbleTimer = 50;
@@ -922,7 +1162,7 @@
                         player.y = obstacle.y - player.height;
                         player.velocityY = 0;
                         player.isJumping = false;
-                        player.jumpsLeft = 2;
+                        player.jumpsLeft = maxJumps;
                     }
                 }
             }
@@ -1000,6 +1240,37 @@
                 if (bouncePads[i].x + bouncePads[i].width < 0) bouncePads.splice(i, 1);
             }
             
+            // Update scissors collectibles
+            for (let i = scissorPickups.length - 1; i >= 0; i--) {
+                const sc = scissorPickups[i];
+                sc.x -= currentSpeed;
+                // Magnet powerup: attract nearby scissors
+                if (activePowerup === 3) {
+                    const dx = (player.x + player.width / 2) - sc.x;
+                    const dy = (player.y + player.height / 2) - sc.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 200) {
+                        sc.x += dx / dist * 5;
+                        sc.y += dy / dist * 5;
+                    }
+                }
+                // Collision with player
+                const bobY = sc.y + Math.sin(Date.now() / 300 + sc.bobOffset) * 5;
+                if (player.x + player.width > sc.x &&
+                    player.x < sc.x + sc.width &&
+                    player.y + player.height > bobY &&
+                    player.y < bobY + sc.height) {
+                    runScissors++;
+                    totalScissors++;
+                    localStorage.setItem('ninjaScissors', totalScissors);
+                    createParticles(sc.x, sc.y, '#FFD700', 8);
+                    playSound('kill');
+                    scissorPickups.splice(i, 1);
+                    continue;
+                }
+                if (sc.x + sc.width < 0) scissorPickups.splice(i, 1);
+            }
+            
             // Update enemies
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const enemy = enemies[i];
@@ -1012,10 +1283,16 @@
                     player.y + player.height > enemy.y &&
                     player.y < enemy.y + enemy.height) {
                     
-                    if (lives > 0) {
+                    if (shieldActive && activePowerup === 2) {
+                        shieldActive = false;
+                        activePowerup = null;
+                        powerupTimer = 0;
+                        createParticles(player.x, player.y, '#3498DB', 15);
+                        playSound('hit');
+                    } else if (lives > 0) {
                         lives--;
                         invulnerable = true;
-                        invulnerableTimer = 300; // 5 seconds at 60fps
+                        invulnerableTimer = 300;
                         playSound('hit');
                         createParticles(player.x, player.y, '#FF0000', 20);
                     } else {
@@ -1068,9 +1345,20 @@
                     collides = hitFromSide;
                 }
                 
-                // TRAPS CAUSE DAMAGE
+                // TRAPS CAUSE DAMAGE (barrels are non-lethal)
                 if (collides && !invulnerable) {
-                    if (lives > 0) {
+                    if (obstacle.color === '#8B4513') {
+                        // Barrel: non-lethal, apply slow
+                        player.barrelSlowTimer = 30;
+                        createParticles(player.x, player.y, '#8B4513', 8);
+                    } else if (shieldActive && activePowerup === 2) {
+                        // Shield absorbs hit
+                        shieldActive = false;
+                        activePowerup = null;
+                        powerupTimer = 0;
+                        createParticles(player.x, player.y, '#3498DB', 15);
+                        playSound('hit');
+                    } else if (lives > 0) {
                         lives--;
                         invulnerable = true;
                         invulnerableTimer = 300;
@@ -1117,6 +1405,7 @@
                     if (proj.x > enemy.x && proj.x < enemy.x + enemy.width &&
                         proj.y > enemy.y && proj.y < enemy.y + enemy.height) {
                         
+                        if (enemy.type === 'ben') playBenKillSound();
                         enemies.splice(j, 1);
                         projectiles.splice(i, 1);
                         
@@ -1394,6 +1683,20 @@
                 ctx.textAlign = 'center';
                 ctx.fillText('↑↑', pad.x + pad.width / 2, pad.y + pad.height - 1);
                 ctx.textAlign = 'left';
+            }
+            
+            // Draw scissors collectibles
+            for (const sc of scissorPickups) {
+                const bobY = sc.y + Math.sin(Date.now() / 300 + sc.bobOffset) * 5;
+                // Glow effect
+                ctx.save();
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = '#FFD700';
+                ctx.font = '18px serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('✂️', sc.x + sc.width / 2, bobY + sc.height - 2);
+                ctx.textAlign = 'left';
+                ctx.restore();
             }
             
             // Draw obstacles
@@ -1799,9 +2102,20 @@
             // Update HUD (drawn without camera transform)
             document.getElementById('scoreText').textContent = Math.floor(score);
             document.getElementById('speedText').textContent = speedMultiplier.toFixed(1);
-            document.getElementById('livesText').textContent = lives;
+            document.getElementById('livesText').textContent = '❤️'.repeat(Math.max(0, lives)) || '0';
             const j = player.jumpsLeft;
-            document.getElementById('jumpsText').textContent = j >= 2 ? '●●' : j === 1 ? '●○' : '○○';
+            const maxJ = (activePowerup === 1) ? 3 : 2;
+            let jumpDots = '';
+            for (let ji = 0; ji < maxJ; ji++) jumpDots += ji < j ? '●' : '○';
+            document.getElementById('jumpsText').textContent = jumpDots;
+            document.getElementById('scissorsText').textContent = runScissors;
+            const pHud = document.getElementById('powerupHud');
+            if (activePowerup !== null) {
+                const pu = POWERUPS[activePowerup];
+                pHud.textContent = pu.icon + ' ' + pu.name + ' ' + Math.ceil(powerupTimer / 60) + 's';
+            } else {
+                pHud.textContent = '';
+            }
         }
 
         function gameOver() {
@@ -1835,6 +2149,7 @@
             
             document.getElementById('finalScore').textContent = Math.floor(score);
             document.getElementById('finalHighScore').textContent = Math.floor(highScore);
+            document.getElementById('runScissorsText').textContent = runScissors;
             document.getElementById('gameOverScreen').classList.remove('hidden');
         }
 
